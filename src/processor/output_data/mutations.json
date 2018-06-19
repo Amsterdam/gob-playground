@@ -1,0 +1,131 @@
+{
+    "entity": "Stadsdeel",
+    "timestamp": "2018-06-19T20:04:12.119482",
+    "source": "DIVA",
+    "mutations": [
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000008.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000001.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000003.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872036.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872037.12-12-2013"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000007.01-01-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000016.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000014.01-01-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000011.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872036.01-05-2010"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000020.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872037.01-05-2010"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872038.01-05-2010"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872038.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000018.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872039.01-05-2010"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000018.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000013.20-11-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000021.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000018.28-12-2011"
+        },
+        {
+            "action": "DELETED",
+            "contents": "3630011872037.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000016.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000019.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000017.01-01-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872038.12-12-2013"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000009.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000019.20-11-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000020.01-01-2015"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872036.28-12-2011"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630000000005.12-06-2006"
+        },
+        {
+            "action": "CONFIRMED",
+            "contents": "3630011872039.01-01-2015"
+        }
+    ]
+}
