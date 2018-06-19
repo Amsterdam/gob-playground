@@ -4,6 +4,12 @@ The GOB Playground is for testing architetorial issues in the GOB project
 Requirements:
 - Python >=3.6
 
+Installation:
+- python3 -m venv venv
+- source venv/bin/activate
+- cd src
+- pip install -r requirements.txt
+
 For simplicity reasons no database is used, all logic operates on text and json files.
 
 Results and intermediate results are easily inspected and discussed.
