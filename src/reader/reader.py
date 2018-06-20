@@ -4,7 +4,10 @@ def read_data(input_dir):
     stadsdeel = {}
     read_stadsdeel_data(input_dir, stadsdeel)
     read_stadsdeel_geometrie(input_dir, stadsdeel)
-    return list(stadsdeel.values())
+    stadsdelen = list(stadsdeel.values())
+
+    check_consistency(stadsdelen)
+    return stadsdelen
 
 def read_stadsdeel_data(input_dir, stadsdeel):
     print("Read Stadsdeel Data")
@@ -33,3 +36,18 @@ def read_stadsdeel_geometrie(input_dir, stadsdeel):
             for name in names:
                 # print("name:", name, "value:", row[name])
                 stadsdeel[id][name] = row[name]
+
+
+def check_consistency(stadsdelen):
+    errors = []
+    for stadsdeel in stadsdelen:
+        if stadsdeel.get("CODE") is None:
+            errors.append(f"ERROR: Stadsdeel {stadsdeel['SDC_ID']}: geometrie zonder data")
+        elif stadsdeel["GEOMETRIE"] is None:
+            errors.append(f"ERROR: Stadsdeel {stadsdeel['ID']}: data zonder geometrie")
+    if len(errors):
+        for error in errors:
+            print(error)
+    else:
+        print("Consistency check OK")
+    return len(errors) == 0

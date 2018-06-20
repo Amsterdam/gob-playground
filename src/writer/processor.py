@@ -5,7 +5,8 @@ def process_data(cur_data, mutations):
 
     cur_values = { data[id_field]: data for data in cur_data["contents"] if data["_source"] == mutations["source"] }
 
-    for mutation in mutations["mutations"]:
+    mutation_list = mutations["mutations"]
+    for mutation in mutation_list:
         contents = mutation["contents"]
 
         if mutation["action"] == "ADD":
@@ -15,7 +16,7 @@ def process_data(cur_data, mutations):
             id = contents[id_field]
             cur_value = cur_values[id]
             for modification in contents["modifications"]:
-                cur_value[modification["key"]] = modification["value"]
+                cur_value[modification["key"]] = modification["new_value"]
             _set_dates(cur_value, { "date_last_modified": timestamp })
         else:
             # CONFIRMED or DELETED
@@ -26,6 +27,12 @@ def process_data(cur_data, mutations):
             else:
                 # CONFIRMED
                 _set_dates(cur_value, { "date_last_confirmed": timestamp })
+
+    print(f"Aantal mutaties: {len(mutation_list)}")
+    for action in ["ADD", "MODIFIED", "CONFIRMED", "DELETED"]:
+        actions = [mutation for mutation in mutation_list if mutation['action'] == action]
+        if len(actions) > 0:
+            print(f"- {action}: {len(actions)}")
 
     return cur_data
 

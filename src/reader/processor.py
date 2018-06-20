@@ -22,6 +22,8 @@ def process_data(raw_stadsdelen):
             }
             stadsdeel["_source_id"] =_get_id(stadsdeel)
             stadsdelen.append(stadsdeel)
+
+    print(f"Geimporteerde stadsdelen: {len(stadsdelen)}")
     return stadsdelen
 
 

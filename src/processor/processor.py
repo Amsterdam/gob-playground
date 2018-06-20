@@ -5,7 +5,7 @@ def process_data(cur_data, new_data):
     print("Process Data")
 
     if new_data["version"] != cur_data["version"]:
-        new_data = migrate(new_data)
+        new_data = migrate(new_data, new_data_version=new_data["version"], cur_data_version=cur_data["version"])
 
     id_field = "_source_id"
 
@@ -28,10 +28,14 @@ def process_data(cur_data, new_data):
                 "contents": new_value
             }
         elif new_value is None:
-            mutation = {
-                "action": "DELETED",
-                "contents": id
-            }
+            if cur_value["_date_deleted"] is None:
+                mutation = {
+                    "action": "DELETED",
+                    "contents": id
+                }
+            else:
+                # Do not delete twice
+                continue
         else:
             # Modified or Confirmed entry
             modifications = []
@@ -39,7 +43,8 @@ def process_data(cur_data, new_data):
                 if not re.search('^_', attr) and new_value.get(attr) != cur_value.get(attr):
                     modifications.append({
                         "key": attr,
-                        "value": new_value.get(attr)
+                        "new_value": new_value.get(attr),
+                        "old_value": cur_value.get(attr)
                     })
             if len(modifications) == 0:
                 mutation = {
@@ -57,6 +62,12 @@ def process_data(cur_data, new_data):
 
         mutations.append(mutation)
 
+    print(f"Aantal mutaties: {len(mutations)}")
+    for action in ["ADD", "MODIFIED", "CONFIRMED", "DELETED"]:
+        actions = [mutation for mutation in mutations if mutation['action'] == action]
+        if len(actions) > 0:
+            print(f"- {action}: {len(actions)}")
+
     return {
         "entity": new_data["entity"],
         "timestamp": datetime.now().isoformat(),
@@ -64,6 +75,7 @@ def process_data(cur_data, new_data):
         "mutations": mutations,
     }
 
-def migrate(data):
+def migrate(data, new_data_version, cur_data_version):
     # Left empty for now
+    print(f"Migrate from version {new_data_version} to current version {cur_data_version}")
     return data
