@@ -47,9 +47,23 @@ To run the modules:
 - cd src/reader; python main.py
 - cd src/processor; python main.py
 - cd src/writer; python main.py
+- cd src/api; python main.py
+- cd src/export; python main.py
 
 Alternatively a small shell script is available:
 - cd src
 - sh run.sh --clean
 - sh run.sh
 
+# RabbitMQ
+
+A demo for RabbitMQ is available in the rabbitmq folder.
+
+```bash
+cd rabbitmq
+docker-compose up &
+cd sender
+python main.py &
+cd ../receiver
+python main.py
+```
