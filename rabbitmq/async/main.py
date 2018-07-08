@@ -20,6 +20,7 @@ class AsyncConnection(object):
 
     def _on_open_connection(self, connection):
         print("On open connection", connection)
+        self._connection = connection
 
         def on_close_channel(channel, code, text):
             print("On close channel", code, text)
@@ -32,6 +33,7 @@ class AsyncConnection(object):
 
             if self._on_connect_callback:
                 self._on_connect_callback()
+                self._on_connect_callback = None
 
             self._lock.release()
 
@@ -43,13 +45,24 @@ class AsyncConnection(object):
         print("Open connection")
 
         def on_error_connection(connection, text):
-            print("On error connection", text, connection)
+            print("On error connection", text, connection.is_open)
+            self._lock.release()
             self.disconnect()
 
 
         def on_close_connection(connection, code, text):
             print("On close connection", code, text)
             self._connection = None
+
+
+        def eventloop():
+            print("Eventloop started")
+            try:
+                self._connection.ioloop.start()
+            except Exception as e:
+                print("Oops", e)
+            self._eventloop = None
+            print("Eventloop ended")
 
 
         self._on_connect_callback = on_connect_callback
@@ -63,10 +76,11 @@ class AsyncConnection(object):
         self._lock = threading.Lock()
         self._lock.acquire()
 
-        self._eventloop = threading.Thread(target = lambda: self._connection.ioloop.start())
+        self._eventloop = threading.Thread(target=eventloop)
         self._eventloop.start()
 
         self._lock.acquire()
+        return self._channel is not None
 
     def publish(self, queue, msg):
         if self._channel is None:
@@ -121,19 +135,24 @@ class AsyncConnection(object):
 
         if self._eventloop is not None:
             print("Cancelling")
-            if len(self._consumer_tags):
-                for consumer_tag in self._consumer_tags:
-                    self._channel.basic_cancel(on_cancel_channel, consumer_tag)
-            else:
-                self._channel.close()
-            self._eventloop.join()
-            self._eventloop = None
-            print("Eventloop has stopped")
-
+            if self._channel is not None:
+                print("Cancelling channel")
+                if len(self._consumer_tags):
+                    for consumer_tag in self._consumer_tags:
+                        self._channel.basic_cancel(on_cancel_channel, consumer_tag)
+                else:
+                    self._channel.close()
 
         if self._connection is not None:
             self._connection.close()
 
+        if self._eventloop is not None:
+            try:
+                self._eventloop.join()
+            except RuntimeError as err:
+                print("Error", err)
+            self._eventloop = None
+        print("Eventloop has stopped")
 
 
 def on_workflow(msg):
@@ -160,9 +179,11 @@ queues = [
 ]
 
 connection = AsyncConnection('localhost')
-connection.connect()
-connection.subscribe(queues)
-time.sleep(1)
-connection.disconnect()
-connection.disconnect()
-print("End")
+if connection.connect():
+    print("Connected")
+    connection.subscribe(queues)
+    # connection.publish(queues[1], "Hi")
+    time.sleep(1)
+    connection.disconnect()
+    connection.disconnect()
+    print("End")
