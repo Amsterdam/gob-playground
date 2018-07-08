@@ -7,84 +7,66 @@ import pika
 
 class AsyncConnection(object):
 
-    def __init__(self, address, queues, reconnect=False):
+    def __init__(self, address, reconnect=False):
         self._connection = None
         self._channel = None
+        self._eventloop = None
 
         self._address = address
-        self._queues = queues
         self._reconnect = reconnect
         self._on_connect_callback = None
 
+        self._consumer_tags = []
 
-    def on_open_connection(self, connection):
+    def _on_open_connection(self, connection):
         print("On open connection", connection)
 
         def on_close_channel(channel, code, text):
             print("On close channel", code, text)
-            self.close_connection()
+            self._channel = None
+            self._connection.close()
 
 
         def on_open_channel(channel):
             print("On open channel", channel)
-            self._channel = channel
-
-            def on_message(handler):
-
-                def handle_message(channel, basic_deliver, properties, body):
-                    # Handle message
-                    if handler(body):
-                        # On success, acknowledge message
-                        print("Ack")
-                        # channel.basic_ack(basic_deliver.delivery_tag)
-
-                return handle_message
-
-            def on_queue_bind(handler, queue):
-                return lambda frame: channel.basic_consume(on_message(handler), queue)
-
-            channel.add_on_close_callback(on_close_channel)
-
-            for queue in self._queues:
-                channel.queue_bind(
-                    on_queue_bind(queue["handler"], queue["name"]),
-                    queue["name"],
-                    queue["name"],
-                    queue["key"]
-                )
 
             if self._on_connect_callback:
                 self._on_connect_callback()
 
-        connection.channel(on_open_callback=on_open_channel)
+            self._lock.release()
 
-    def close_connection(self):
-        self.disconnect()
-        if self._reconnect:
-            time.sleep(5)
-            self.connect()
 
+        self._channel = connection.channel(on_open_callback=on_open_channel)
+        self._channel.add_on_close_callback(on_close_channel)
 
     def connect(self, on_connect_callback=None):
         print("Open connection")
 
         def on_error_connection(connection, text):
             print("On error connection", text, connection)
-            self.close_connection()
+            self.disconnect()
 
 
         def on_close_connection(connection, code, text):
             print("On close connection", code, text)
-            self.close_connection()
+            self._connection = None
+
 
         self._on_connect_callback = on_connect_callback
 
         self._connection = pika.SelectConnection(
           pika.ConnectionParameters(self._address),
-          on_open_callback=self.on_open_connection,
+          on_open_callback=self._on_open_connection,
           on_open_error_callback=on_error_connection,
           on_close_callback=on_close_connection)
 
+        self._lock = threading.Lock()
+        self._lock.acquire()
+
+        self._eventloop = threading.Thread(target = lambda: self._connection.ioloop.start())
+        self._eventloop.start()
+
+        self._lock.acquire()
 
     def publish(self, queue, msg):
         if self._channel is None:
@@ -101,23 +83,57 @@ class AsyncConnection(object):
             body=json_msg
         )
 
+    def subscribe(self, queues):
+        def on_message(handler):
 
-    def subscribe(self):
-        self._subscriber = threading.Thread(target = lambda: self._connection.ioloop.start())
-        self._subscriber.start()
+            def handle_message(channel, basic_deliver, properties, body):
+                # Handle message
+                if handler(body) is not False:
+                    # Default is to acknowledge message
+                    print("Ack")
+                    # channel.basic_ack(basic_deliver.delivery_tag)
 
+            return handle_message
+
+        def on_queue_bind(handler, queue):
+            consumer_tag = self._channel.basic_consume(on_message(handler), queue)
+            self._consumer_tags.append(consumer_tag)
+            return lambda frame: consumer_tag
+
+
+        for queue in queues:
+            self._channel.queue_bind(
+                on_queue_bind(queue["handler"], queue["name"]),
+                queue["name"],
+                queue["name"],
+                queue["key"]
+            )
 
     def disconnect(self):
-        self._connection.ioloop.add_callback_threadsafe(self._connection.ioloop.stop)
+        print("Disconnect")
 
-        if self._subscriber is not None:
-            self._subscriber.join()
-            self._subscriber = None
+        def on_cancel_channel(frame):
+            print("On cancel channel")
+            if self._channel.is_open:
+                print("Close channel")
+                self._channel.close()
 
-        self._connection.close()
 
-        self._connection = None
-        self._channel = None
+        if self._eventloop is not None:
+            print("Cancelling")
+            if len(self._consumer_tags):
+                for consumer_tag in self._consumer_tags:
+                    self._channel.basic_cancel(on_cancel_channel, consumer_tag)
+            else:
+                self._channel.close()
+            self._eventloop.join()
+            self._eventloop = None
+            print("Eventloop has stopped")
+
+
+        if self._connection is not None:
+            self._connection.close()
+
 
 
 def on_workflow(msg):
@@ -143,31 +159,10 @@ queues = [
     }
 ]
 
-connection = AsyncConnection('localhost', queues)
-
-def run():
-    print("Run start")
-    # connection.receive()
-    connection.publish(queues[0], "Hello")
-    print("Run end")
-    time.sleep(5)
-    connection.disconnect()
-
-# atexit.register(connection.disconnect)
-
+connection = AsyncConnection('localhost')
 connection.connect()
-
-connection.subscribe()
-
-# subscriber = threading.Thread(target = lambda: connection.subscribe())
-# subscriber.start()
-
-time.sleep(2)
-connection.publish(queues[0], "Hello")
+connection.subscribe(queues)
 time.sleep(1)
-
-print("Disconnect")
 connection.disconnect()
-
-time.sleep(1)
+connection.disconnect()
 print("End")
