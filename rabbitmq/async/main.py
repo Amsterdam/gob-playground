@@ -6,7 +6,7 @@ import pika
 
 
 def progress(*args):
-    print(*args)
+    print("Progress", *args)
 
 
 class AsyncConnection(object):
@@ -66,7 +66,7 @@ class AsyncConnection(object):
             """
 
             progress("Channel closed:", code, text)
-            self._channel = None
+            # self._channel = None
             # Close the connection
             self._connection.close()
 
@@ -130,7 +130,7 @@ class AsyncConnection(object):
             """
 
             progress("Connection closed:", code, text)
-            self._connection = None
+            # self._connection = None
 
 
         def eventloop():
@@ -144,7 +144,6 @@ class AsyncConnection(object):
                 self._connection.ioloop.start()
             except Exception as e:
                 progress("Eventloop exception:", e)
-            progress("Eventloop ended")
 
 
         # A callback function can be specified that will be called when a connection is established
@@ -230,8 +229,6 @@ class AsyncConnection(object):
                 :return:
                 """
 
-                print(basic_deliver, properties)
-
                 # Try to parse body as json message, else pass it as it is received
                 msg = body
                 try:
@@ -241,8 +238,7 @@ class AsyncConnection(object):
 
                 if message_handler(queue["name"], basic_deliver.routing_key, msg) is not False:
                     # Default is to acknowledge message
-                    progress("Acknowledge message")
-                    # channel.basic_ack(basic_deliver.delivery_tag)
+                    channel.basic_ack(basic_deliver.delivery_tag)
 
             return handle_message
 
@@ -278,60 +274,51 @@ class AsyncConnection(object):
         :return: None
         """
 
-        def close_eventloop():
+        # Close any open channel
+        if self._channel is not None and self._channel.is_open:
             # Cancel consumers
-            if self._channel is not None:
-                for consumer_tag in self._channel.consumer_tags:
-                    self._channel.basic_cancel(
-                        callback=lambda frame: None,
-                        consumer_tag=consumer_tag)
-                self._channel.close()
-
-            # Try to join the eventloop and wait for it to end
-            try:
-                self._eventloop.join()
-            except RuntimeError as err:
-                # The eventloop is already closing
-                progress("Eventloop could not be joined:", err)
-
-            self._eventloop = None
+            for consumer_tag in self._channel.consumer_tags:
+                self._channel.basic_cancel(
+                    callback=lambda frame: None,
+                    consumer_tag=consumer_tag)
+            self._channel.close()
+        self._channel = None
 
         # Close any running eventloop
         if self._eventloop is not None:
-            close_eventloop()
-
-        # Close any open channel
-        if self._channel is not None:
-            self._channel.close()
+            try:
+                self._eventloop.join()
+            except RuntimeError:
+                # The eventloop is already closing
+                pass
+        self._eventloop = None
 
         # Close any open connection
-        if self._connection is not None:
+        if self._connection is not None and self._connection.is_open:
             self._connection.close()
+        self._connection = None
 
 
+def on_message(queue, key, msg):
+    print("Workflow", queue, key, msg)
+    return True
 
-# def on_message(queue, key, msg):
-#     print("Workflow", queue, key, msg)
-#     return True
-#
-#
-# queues = [
-#     {
-#         "name": "gob.workflow",
-#         "key": "#"
-#     },
-#     {
-#         "name": "gob.log",
-#         "key": "#"
-#     }
-# ]
-#
-# connection = AsyncConnection('localhost')
-# if connection.connect():
-#     print("Connected")
-#     connection.subscribe(queues, on_message)
-#     connection.publish(queues[1], "mykey", {"message": "Hello"})
-#     time.sleep(1)
-#     connection.disconnect()
-#     connection.disconnect()
-#     print("End")
+
+queues = [
+    {
+        "name": "gob.workflow",
+        "key": "#"
+    },
+    {
+        "name": "gob.log",
+        "key": "#"
+    }
+]
+
+connection = AsyncConnection('localhost')
+if connection.connect():
+    connection.subscribe(queues, on_message)
+    connection.publish(queues[1], "mykey", {"message": "Hello"})
+    time.sleep(1)
+    connection.disconnect()
+    connection.disconnect()

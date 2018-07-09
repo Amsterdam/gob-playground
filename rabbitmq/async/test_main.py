@@ -20,9 +20,14 @@ class MockIoloop:
             self.running = False
 
     def stop(self):
-        self.lock.release()
+        try:
+            self.lock.release()
+        except RuntimeError:
+            pass
 
 class MockDeliver:
+
+    delivery_tag = "tag"
 
     def __init__(self, key):
         self.routing_key = key
@@ -34,6 +39,7 @@ class MockChannel:
     consumer_callback = None
     consumer_tags = [1, 2, 3]
     on_close = None
+    is_open = True
 
     def add_on_close_callback(self, callback):
         self.on_close = callback
@@ -57,6 +63,10 @@ class MockChannel:
                      consumer_tag):
         pass
 
+    def basic_ack(self,
+                  tag):
+        pass
+
     def queue_bind(self,
                    callback,
                    exchange,
@@ -78,6 +88,7 @@ class MockConnection:
     connection_success = True
 
     on_close = None
+    is_open = True
 
     def __init__(self):
         self.ioloop = MockIoloop()
