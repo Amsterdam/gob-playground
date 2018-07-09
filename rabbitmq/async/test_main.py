@@ -47,6 +47,7 @@ class MockChannel:
             callback(self, code=1, text="Error")
 
     def close(self):
+        self.is_open = False
         if self.on_close is not None:
             self.on_close(self, code=0, text="OnClose")
 

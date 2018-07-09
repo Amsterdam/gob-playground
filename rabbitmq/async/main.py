@@ -6,7 +6,7 @@ import pika
 
 
 def progress(*args):
-    print("Progress", *args)
+    print("Progress", threading.get_ident(), *args)
 
 
 class AsyncConnection(object):
@@ -66,9 +66,7 @@ class AsyncConnection(object):
             """
 
             progress("Channel closed:", code, text)
-            # self._channel = None
-            # Close the connection
-            self._connection.close()
+            self.disconnect()
 
 
         def on_open_channel(channel):
@@ -130,7 +128,7 @@ class AsyncConnection(object):
             """
 
             progress("Connection closed:", code, text)
-            # self._connection = None
+            self._connection = None
 
 
         def eventloop():
@@ -140,10 +138,13 @@ class AsyncConnection(object):
 
             :return: None
             """
+
+            progress("Eventloop started")
             try:
                 self._connection.ioloop.start()
             except Exception as e:
                 progress("Eventloop exception:", e)
+            progress("Eventloop ended")
 
 
         # A callback function can be specified that will be called when a connection is established
@@ -274,8 +275,11 @@ class AsyncConnection(object):
         :return: None
         """
 
+        progress("Disconnect")
+
         # Close any open channel
         if self._channel is not None and self._channel.is_open:
+            progress("Close channel")
             # Cancel consumers
             for consumer_tag in self._channel.consumer_tags:
                 self._channel.basic_cancel(
@@ -284,41 +288,36 @@ class AsyncConnection(object):
             self._channel.close()
         self._channel = None
 
-        # Close any running eventloop
-        if self._eventloop is not None:
-            try:
-                self._eventloop.join()
-            except RuntimeError:
-                # The eventloop is already closing
-                pass
-        self._eventloop = None
-
         # Close any open connection
-        if self._connection is not None and self._connection.is_open:
+        if self._connection is not None:
+            progress("Close connection")
             self._connection.close()
+            if self._eventloop is not None and threading.get_ident() != self._eventloop.ident:
+                self._eventloop.join()
+                self._eventloop = None
         self._connection = None
 
 
-def on_message(queue, key, msg):
-    print("Workflow", queue, key, msg)
-    return True
-
-
-queues = [
-    {
-        "name": "gob.workflow",
-        "key": "#"
-    },
-    {
-        "name": "gob.log",
-        "key": "#"
-    }
-]
-
-connection = AsyncConnection('localhost')
-if connection.connect():
-    connection.subscribe(queues, on_message)
-    connection.publish(queues[1], "mykey", {"message": "Hello"})
-    time.sleep(1)
-    connection.disconnect()
-    connection.disconnect()
+# def on_message(queue, key, msg):
+#     print("Workflow", queue, key, msg)
+#     return True
+#
+#
+# queues = [
+#     {
+#         "name": "gob.workflow",
+#         "key": "#"
+#     },
+#     {
+#         "name": "gob.log",
+#         "key": "#"
+#     }
+# ]
+#
+# connection = AsyncConnection('localhost')
+# if connection.connect():
+#     connection.subscribe(queues, on_message)
+#     connection.publish(queues[1], "mykey", {"message": "Hello"})
+#     time.sleep(10)
+#     connection.disconnect()
+#     connection.disconnect()
