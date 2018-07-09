@@ -5,89 +5,190 @@ import threading
 import pika
 
 
-class AsyncConnection(object):
+def progress(*args):
+    print(*args)
 
-    def __init__(self, address, reconnect=False):
+
+class AsyncConnection(object):
+    """This is an asynchronous RabbitMQ connection.
+
+    It handles unexpected conditions when interacting with RabbitMQ
+
+    Threading and locks are used to provide for a synchronous connection setup and
+    to allow both publishing and subscribing in parallel.
+
+    The connection allows for an unlimited number of subscriptions.
+
+    Extensive use of closures is made to handle the asynchronous communication with RabbitMQ
+
+    No automatic reconnection with RabbitMQ is implemented.
+
+    """
+
+    def __init__(self, address):
+        """Create a new AsyncConnection
+
+        :param address: The RabbitMQ address
+        """
+
+        # The address of the RabbitMQ Message broker
+        self._address = address
+
+        # The Connection and Channel objects
         self._connection = None
         self._channel = None
+
+        # The RabbitMQ eventloop thread
         self._eventloop = None
 
-        self._address = address
-        self._reconnect = reconnect
+        # Optional method, called on connection established
         self._on_connect_callback = None
 
-        self._consumer_tags = []
-
     def _on_open_connection(self, connection):
-        print("On open connection", connection)
+        """Called on successful connection to RabbitMQ
+
+        A channel will be created for the communication with RabbitMQ
+
+        :param connection: The connection that has been establishe
+        :return: None
+        """
+
+        # Register the connection
         self._connection = connection
 
         def on_close_channel(channel, code, text):
-            print("On close channel", code, text)
+            """Called when a channel is closed
+
+            :param channel: The channel that is closed
+            :param code: The code for the channel closure
+            :param text: The test for the channel closure
+            :return: None
+            """
+
+            progress("Channel closed:", code, text)
             self._channel = None
+            # Close the connection
             self._connection.close()
 
 
         def on_open_channel(channel):
-            print("On open channel", channel)
+            """Called when a channel has been successfully established
 
+            :param channel: The Channel object
+            :return: None
+            """
+
+            # If a callback has been defined for connection success, call this function
             if self._on_connect_callback:
                 self._on_connect_callback()
+                # Call it only once
                 self._on_connect_callback = None
 
+            # Release the lock set in the connect() function so that this function can return the result
             self._lock.release()
 
 
+        # Create a Channel, on_open_channel is called on success
         self._channel = connection.channel(on_open_callback=on_open_channel)
-        self._channel.add_on_close_callback(on_close_channel)
+
+        # Register a function to handle the closure of the channel
+        self._channel.add_on_close_callback(callback=on_close_channel)
 
     def connect(self, on_connect_callback=None):
-        print("Open connection")
+        """Connect to RabbitMQ.
+
+        :param on_connect_callback: This function will be called when a connection has been established
+        :return bool: True when the connection has been established, False otherwise
+        """
 
         def on_error_connection(connection, text):
-            print("On error connection", text, connection.is_open)
+            """This function is called on a connection error
+
+            The lock that has been set on connection creation will be released.
+            The connect function will be released and notice that no channel has been created.
+            It will therefore return False to inform the caller that no connection could be established
+
+            The disconnect method will be called to clean up the connection properties and stop the eventloop.
+
+            :param connection: The connection object
+            :param text: The error text
+            :return: None
+            """
+
+            progress("Connection error:", text)
             self._lock.release()
             self.disconnect()
 
 
         def on_close_connection(connection, code, text):
-            print("On close connection", code, text)
+            """Called when a connection is closed
+
+            :param connection: The RabbitMQ connection object
+            :param code: The error code
+            :param text: The error text
+            :return: None
+            """
+
+            progress("Connection closed:", code, text)
             self._connection = None
 
 
         def eventloop():
-            print("Eventloop started")
+            """The RabbitMQ eventloop.
+
+            An ioloop is started to listen for messages for the active subscriptions.
+
+            :return: None
+            """
             try:
                 self._connection.ioloop.start()
             except Exception as e:
-                print("Oops", e)
-            self._eventloop = None
-            print("Eventloop ended")
+                progress("Eventloop exception:", e)
+            progress("Eventloop ended")
 
 
+        # A callback function can be specified that will be called when a connection is established
         self._on_connect_callback = on_connect_callback
 
+        # Obtain a lock. The lock will be release on connection establishment or on failure
+        self._lock = threading.Lock()
+        self._lock.acquire()
+
+        # Create a connection object
         self._connection = pika.SelectConnection(
-          pika.ConnectionParameters(self._address),
+          parameters=pika.ConnectionParameters(self._address),
           on_open_callback=self._on_open_connection,
           on_open_error_callback=on_error_connection,
           on_close_callback=on_close_connection)
 
-        self._lock = threading.Lock()
-        self._lock.acquire()
-
+        # Start the RabbitMQ eventloop
         self._eventloop = threading.Thread(target=eventloop)
         self._eventloop.start()
 
+        # Wait for the lock to be released to be able to report success or failure
         self._lock.acquire()
+
+        # Check whether a channel has been created, which means the connection has been established
         return self._channel is not None
 
     def publish(self, queue, msg):
+        """Publish a message on a queue
+
+        The message will be converted to json before publishing it on the queue
+
+        :param queue: The queue object
+        :param msg: The message
+        :return: None
+        """
+
+        # Check whether a connection has been established
         if self._channel is None:
             raise Exception("Connection with message broker not available")
 
+        # Convert the message to json
         json_msg = json.dumps(msg)
 
+        # Publish the message as a persistent message on the queue
         self._channel.basic_publish(
             exchange=queue["name"],
             routing_key=queue["key"],
@@ -98,61 +199,106 @@ class AsyncConnection(object):
         )
 
     def subscribe(self, queues):
+        """Subscribe to the given queues
+
+        :param queues: The queues to subscribe on
+        :return: None
+        """
+
         def on_message(handler):
+            """This function is called for every message that is received
+
+            The specified handler will be called to let the application handle the message.
+            Default behaviour is to acknowledge the message after it has been successfully handled.
+            If the handler returns False the message will not be acknowledged and stay on the queue
+
+            :param handler: The user specified handler function
+            :return: The handle message function
+            """
 
             def handle_message(channel, basic_deliver, properties, body):
-                # Handle message
+                """Handle the incoming message
+
+                The message body is a json object which will be parsed on receipt (todo)
+
+                Call the handler and acknowledge the message after it has been successfully handled
+
+                :param channel: todo
+                :param basic_deliver: todo
+                :param properties: todo
+                :param body: The message body
+                :return:
+                """
+
                 if handler(body) is not False:
                     # Default is to acknowledge message
-                    print("Ack")
+                    progress("Acknowledge message")
                     # channel.basic_ack(basic_deliver.delivery_tag)
 
             return handle_message
 
         def on_queue_bind(handler, queue):
-            consumer_tag = self._channel.basic_consume(on_message(handler), queue)
-            self._consumer_tags.append(consumer_tag)
-            return lambda frame: consumer_tag
+            """Calles on successfully bind to the given queue
 
+            A consumer will be created to consume the messages from the queue
 
+            :param handler: The handler to call when a message is received
+            :param queue: The name of the queue
+            :return: A method that links the handler to a consumer
+            """
+            return lambda frame: self._channel.basic_consume(
+                consumer_callback=on_message(handler),
+                queue=queue)
+
+        # Subscribe to each queue in the list
         for queue in queues:
             self._channel.queue_bind(
-                on_queue_bind(queue["handler"], queue["name"]),
-                queue["name"],
-                queue["name"],
-                queue["key"]
+                callback=on_queue_bind(queue["handler"], queue["name"]),
+                exchange=queue["name"],
+                queue=queue["name"],
+                routing_key=queue["key"]
             )
 
     def disconnect(self):
-        print("Disconnect")
+        """Disconnect from RabbitMQ
 
-        def on_cancel_channel(frame):
-            print("On cancel channel")
-            if self._channel.is_open:
-                print("Close channel")
+        Stop any running eventloop
+        Close any open channels
+        Close the connection
+
+        :return: None
+        """
+
+        def close_eventloop():
+            # Cancel consumers
+            if self._channel is not None:
+                for consumer_tag in self._channel.consumer_tags:
+                    self._channel.basic_cancel(
+                        callback=lambda frame: None,
+                        consumer_tag=consumer_tag)
                 self._channel.close()
 
-
-        if self._eventloop is not None:
-            print("Cancelling")
-            if self._channel is not None:
-                print("Cancelling channel")
-                if len(self._consumer_tags):
-                    for consumer_tag in self._consumer_tags:
-                        self._channel.basic_cancel(on_cancel_channel, consumer_tag)
-                else:
-                    self._channel.close()
-
-        if self._connection is not None:
-            self._connection.close()
-
-        if self._eventloop is not None:
+            # Try to join the eventloop and wait for it to end
             try:
                 self._eventloop.join()
             except RuntimeError as err:
-                print("Error", err)
+                # The eventloop is already closing
+                progress("Eventloop could not be joined:", err)
+
             self._eventloop = None
-        print("Eventloop has stopped")
+
+        # Close any running eventloop
+        if self._eventloop is not None:
+            close_eventloop()
+
+        # Close any open channel
+        if self._channel is not None:
+            self._channel.close()
+
+        # Close any open connection
+        if self._connection is not None:
+            self._connection.close()
+
 
 
 def on_workflow(msg):
