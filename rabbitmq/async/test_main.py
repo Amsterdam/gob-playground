@@ -1,6 +1,7 @@
 import threading
-import pytest
+import json
 import pika
+import pytest
 
 from .main import AsyncConnection
 
@@ -20,6 +21,11 @@ class MockIoloop:
 
     def stop(self):
         self.lock.release()
+
+class MockDeliver:
+
+    def __init__(self, key):
+        self.routing_key = key
 
 class MockChannel:
 
@@ -43,7 +49,8 @@ class MockChannel:
                       routing_key,
                       properties,
                       body):
-        pass
+        global published_message
+        published_message = body
 
     def basic_cancel(self,
                      callback,
@@ -62,7 +69,9 @@ class MockChannel:
                       consumer_callback,
                       queue):
         self.consumer_callback = consumer_callback
-        consumer_callback(self, {}, {}, "body")
+        global consumed_message
+        consumed_message = "mybody"
+        consumer_callback(self, MockDeliver("mykey"), {}, "mybody")
 
 class MockConnection:
 
@@ -96,10 +105,10 @@ class MockPika:
     selectConnectionOK = True
 
     def SelectConnection(self,
-            parameters,
-            on_open_callback,
-            on_open_error_callback,
-            on_close_callback):
+                         parameters,
+                         on_open_callback,
+                         on_open_error_callback,
+                         on_close_callback):
         if self.selectConnectionOK:
             connection = MockConnection()
             connection.connection_succes = True
@@ -110,26 +119,29 @@ class MockPika:
             on_open_error_callback(None, 'Fail to open connection')
             return None
 
+consumed_message = None
+published_message = None
+on_connect_called = False
+
 def mock_connection(monkeypatch, connection_success):
     _pika = MockPika()
     _pika.selectConnectionOK = connection_success
     monkeypatch.setattr(pika, 'SelectConnection', _pika.SelectConnection)
 
+    global consumed_message
+    global published_message
+    global on_connect_called
 
-is_on_connect_called = False
-
-def get_on_connect():
-
-    def on_connect():
-        # Helper function to test callback on connect
-        global is_on_connect_called
-        is_on_connect_called = True
+    consumed_message = None
+    published_message = None
+    on_connect_called = False
 
 
+def on_connect():
     # Helper function to test callback on connect
-    global is_on_connect_called
-    is_on_connect_called = False
-    return on_connect
+    global on_connect_called
+
+    on_connect_called = True
 
 
 def test_connection_constructor():
@@ -169,24 +181,27 @@ def test_connect_success(monkeypatch):
     connection.disconnect()
 
 
-def test_connect_callback(monkeypatch):
+def test_connect_callback_success(monkeypatch):
     # Test if connect calls callback on success
     mock_connection(monkeypatch, connection_success=True)
+    global on_connect_called
 
+    assert(not on_connect_called)
     connection = AsyncConnection('address')
-    connection.connect(get_on_connect())
-    assert(is_on_connect_called)
+    connection.connect(on_connect)
+    assert(on_connect_called)
     connection.disconnect()
 
 
-def test_connect_callback(monkeypatch):
+def test_connect_callback_failure(monkeypatch):
     # Test if connect does not call callback on failure
     mock_connection(monkeypatch, connection_success=False)
+    global on_connect_called
 
     connection = AsyncConnection('address')
-    connection.connect(get_on_connect())
-    assert(not is_on_connect_called)
-    connection.disconnect()
+    assert(not on_connect_called)
+    connection.connect(on_connect)
+    assert(not on_connect_called)
 
 
 def test_publish(monkeypatch):
@@ -199,7 +214,8 @@ def test_publish(monkeypatch):
         "name": "name",
         "key": "key"
     }
-    connection.publish(queue, "message")
+    connection.publish(queue, "key", "message")
+    assert(published_message == json.dumps("message"))
     connection.disconnect()
 
 
@@ -213,7 +229,7 @@ def test_publish_failure(monkeypatch):
         "key": "key"
     }
     with pytest.raises(Exception):
-        connection.publish(queue, "message")
+        connection.publish(queue, "key", "message")
 
 
 def test_subscribe(monkeypatch):
@@ -222,15 +238,17 @@ def test_subscribe(monkeypatch):
 
     result = None
 
-    def on_message(body):
-        assert(body == "body")
+    def on_message(queue, key, body):
+        assert(queue == "name")
+        assert(key == "mykey")
+        assert(body == "mybody")
 
     connection = AsyncConnection('address')
     connection.connect()
     queue = {
         "name": "name",
-        "key": "key",
-        "handler": on_message
+        "key": "key"
     }
-    connection.subscribe([queue, queue])
+    connection.subscribe([queue, queue], on_message)
     connection.disconnect()
+    assert(consumed_message == "mybody")

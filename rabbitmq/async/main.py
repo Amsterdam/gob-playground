@@ -171,7 +171,7 @@ class AsyncConnection(object):
         # Check whether a channel has been created, which means the connection has been established
         return self._channel is not None
 
-    def publish(self, queue, msg):
+    def publish(self, queue, key, msg):
         """Publish a message on a queue
 
         The message will be converted to json before publishing it on the queue
@@ -191,21 +191,21 @@ class AsyncConnection(object):
         # Publish the message as a persistent message on the queue
         self._channel.basic_publish(
             exchange=queue["name"],
-            routing_key=queue["key"],
+            routing_key=key,
             properties=pika.BasicProperties(
                 delivery_mode=2  # Make messages persistent
             ),
             body=json_msg
         )
 
-    def subscribe(self, queues):
+    def subscribe(self, queues, message_handler):
         """Subscribe to the given queues
 
         :param queues: The queues to subscribe on
         :return: None
         """
 
-        def on_message(handler):
+        def on_message(queue):
             """This function is called for every message that is received
 
             The specified handler will be called to let the application handle the message.
@@ -230,14 +230,23 @@ class AsyncConnection(object):
                 :return:
                 """
 
-                if handler(body) is not False:
+                print(basic_deliver, properties)
+
+                # Try to parse body as json message, else pass it as it is received
+                msg = body
+                try:
+                    msg = json.loads(body)
+                except json.decoder.JSONDecodeError:
+                    pass
+
+                if message_handler(queue["name"], basic_deliver.routing_key, msg) is not False:
                     # Default is to acknowledge message
                     progress("Acknowledge message")
                     # channel.basic_ack(basic_deliver.delivery_tag)
 
             return handle_message
 
-        def on_queue_bind(handler, queue):
+        def on_queue_bind(queue):
             """Calles on successfully bind to the given queue
 
             A consumer will be created to consume the messages from the queue
@@ -247,13 +256,13 @@ class AsyncConnection(object):
             :return: A method that links the handler to a consumer
             """
             return lambda frame: self._channel.basic_consume(
-                consumer_callback=on_message(handler),
-                queue=queue)
+                consumer_callback=on_message(queue),
+                queue=queue["name"])
 
         # Subscribe to each queue in the list
         for queue in queues:
             self._channel.queue_bind(
-                callback=on_queue_bind(queue["handler"], queue["name"]),
+                callback=on_queue_bind(queue),
                 exchange=queue["name"],
                 queue=queue["name"],
                 routing_key=queue["key"]
@@ -301,35 +310,28 @@ class AsyncConnection(object):
 
 
 
-def on_workflow(msg):
-    print("Workflow", msg)
-    return True
-
-
-def on_log(msg):
-    print("Log", msg)
-    return True
-
-
-queues = [
-    {
-        "name": "gob.workflow",
-        "key": "#",
-        "handler": on_workflow
-    },
-    {
-        "name": "gob.log",
-        "key": "#",
-        "handler": on_log
-    }
-]
-
-connection = AsyncConnection('localhost')
-if connection.connect():
-    print("Connected")
-    connection.subscribe(queues)
-    # connection.publish(queues[1], "Hi")
-    time.sleep(1)
-    connection.disconnect()
-    connection.disconnect()
-    print("End")
+# def on_message(queue, key, msg):
+#     print("Workflow", queue, key, msg)
+#     return True
+#
+#
+# queues = [
+#     {
+#         "name": "gob.workflow",
+#         "key": "#"
+#     },
+#     {
+#         "name": "gob.log",
+#         "key": "#"
+#     }
+# ]
+#
+# connection = AsyncConnection('localhost')
+# if connection.connect():
+#     print("Connected")
+#     connection.subscribe(queues, on_message)
+#     connection.publish(queues[1], "mykey", {"message": "Hello"})
+#     time.sleep(1)
+#     connection.disconnect()
+#     connection.disconnect()
+#     print("End")
